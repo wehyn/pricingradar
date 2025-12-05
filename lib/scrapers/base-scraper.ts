@@ -1,10 +1,12 @@
 import { chromium, Browser, Page, BrowserContext } from "playwright";
+import fs from "fs";
 import { ScrapedProduct, MarketplaceType, ScrapeResult } from "./types";
 import { sleep } from "./index";
 
-// Brave browser executable path for macOS
-const BRAVE_PATH =
-  "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser";
+// Common browser executable paths
+const BRAVE_PATH = "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser";
+const CHROME_WIN_PATH = `C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe`;
+const CHROME_WIN_PATH_X86 = `C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe`;
 
 // Scraper configuration
 export interface ScraperOptions {
@@ -43,8 +45,15 @@ export abstract class BaseScraper {
 
   // Initialize browser
   async init(): Promise<void> {
-    this.browser = await chromium.launch({
-      executablePath: BRAVE_PATH,
+    // Build platform-aware launch options. Prefer an explicit executable if provided
+    // via env `CHROME_EXECUTABLE`. On Windows prefer installed Chrome via channel
+    // or common install paths. On macOS prefer Brave if present, otherwise try
+    // the browser channel. When nothing else, let Playwright use its bundled
+    // Chromium.
+    const isWin = process.platform === "win32";
+    const isMac = process.platform === "darwin";
+
+    const launchOpts: any = {
       headless: this.options.headless,
       args: [
         "--disable-blink-features=AutomationControlled",
@@ -52,7 +61,32 @@ export abstract class BaseScraper {
         "--no-sandbox",
         "--disable-setuid-sandbox",
       ],
-    });
+    };
+
+    // Allow explicit override via env var
+    if (process.env.CHROME_EXECUTABLE) {
+      launchOpts.executablePath = process.env.CHROME_EXECUTABLE;
+    } else if (isWin) {
+      // Prefer channel on Windows (Playwright will find installed Chrome)
+      launchOpts.channel = "chrome";
+      // But if common paths exist, prefer executablePath
+      if (fs.existsSync(CHROME_WIN_PATH)) {
+        launchOpts.executablePath = CHROME_WIN_PATH;
+        delete launchOpts.channel;
+      } else if (fs.existsSync(CHROME_WIN_PATH_X86)) {
+        launchOpts.executablePath = CHROME_WIN_PATH_X86;
+        delete launchOpts.channel;
+      }
+    } else if (isMac) {
+      if (fs.existsSync(BRAVE_PATH)) {
+        launchOpts.executablePath = BRAVE_PATH;
+      } else {
+        // Try to use Chrome channel on macOS
+        launchOpts.channel = "chrome";
+      }
+    }
+
+    this.browser = await chromium.launch(launchOpts);
 
     this.context = await this.browser.newContext({
       userAgent: this.options.userAgent,
@@ -209,10 +243,31 @@ export async function scrapeWithBrowser<T>(
 ): Promise<T> {
   const opts = { ...DEFAULT_OPTIONS, ...options };
 
-  const browser = await chromium.launch({
-    executablePath: BRAVE_PATH,
-    headless: opts.headless,
-  });
+  const isWin = process.platform === "win32";
+  const isMac = process.platform === "darwin";
+
+  const launchOpts: any = { headless: opts.headless };
+
+  if (process.env.CHROME_EXECUTABLE) {
+    launchOpts.executablePath = process.env.CHROME_EXECUTABLE;
+  } else if (isWin) {
+    launchOpts.channel = "chrome";
+    if (fs.existsSync(CHROME_WIN_PATH)) {
+      launchOpts.executablePath = CHROME_WIN_PATH;
+      delete launchOpts.channel;
+    } else if (fs.existsSync(CHROME_WIN_PATH_X86)) {
+      launchOpts.executablePath = CHROME_WIN_PATH_X86;
+      delete launchOpts.channel;
+    }
+  } else if (isMac) {
+    if (fs.existsSync(BRAVE_PATH)) {
+      launchOpts.executablePath = BRAVE_PATH;
+    } else {
+      launchOpts.channel = "chrome";
+    }
+  }
+
+  const browser = await chromium.launch(launchOpts);
 
   const context = await browser.newContext({
     userAgent: opts.userAgent,
