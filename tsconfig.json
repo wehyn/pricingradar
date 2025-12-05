@@ -12,6 +12,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "react-jsx",
+    "downlevelIteration": true,
     "incremental": true,
     "plugins": [
       {

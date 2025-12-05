@@ -1,16 +1,20 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { CompetitorProduct, InternalProduct, ProductMapping as ProductMappingType } from '@/lib/scrapers/types';
-import { Button, Input, Card } from '../ui';
-import { generateId } from '@/lib/scrapers';
+import { useState } from "react";
+import {
+  CompetitorProduct,
+  InternalProduct,
+  ProductMapping as ProductMappingType,
+} from "@/lib/scrapers/types";
+import { Button, Input, Card } from "../ui";
+import { generateId } from "@/lib/scrapers";
 
 interface ProductMappingProps {
   competitorProducts: CompetitorProduct[];
   internalProducts: InternalProduct[];
   mappings: ProductMappingType[];
   onMappingsChange: (mappings: ProductMappingType[]) => void;
-  onAddInternalProduct: (product: Omit<InternalProduct, 'id'>) => void;
+  onAddInternalProduct: (product: Omit<InternalProduct, "id">) => void;
 }
 
 export function ProductMapping({
@@ -21,12 +25,22 @@ export function ProductMapping({
   onAddInternalProduct,
 }: ProductMappingProps) {
   const [showAddProduct, setShowAddProduct] = useState(false);
-  const [newProduct, setNewProduct] = useState({ sku: '', name: '', currentPrice: '', currency: 'USD' });
+  const [newProduct, setNewProduct] = useState({
+    sku: "",
+    name: "",
+    currentPrice: "",
+    currency: "USD",
+  });
 
-  const handleMapProduct = (competitorProductId: string, internalProductId: string) => {
+  const handleMapProduct = (
+    competitorProductId: string,
+    internalProductId: string
+  ) => {
     // Remove existing mapping for this competitor product
-    const filtered = mappings.filter(m => m.competitorProductId !== competitorProductId);
-    
+    const filtered = mappings.filter(
+      (m) => m.competitorProductId !== competitorProductId
+    );
+
     if (internalProductId) {
       const newMapping: ProductMappingType = {
         id: generateId(),
@@ -42,24 +56,26 @@ export function ProductMapping({
   };
 
   const getMappedInternalProductId = (competitorProductId: string): string => {
-    const mapping = mappings.find(m => m.competitorProductId === competitorProductId);
-    return mapping?.internalProductId || '';
+    const mapping = mappings.find(
+      (m) => m.competitorProductId === competitorProductId
+    );
+    return mapping?.internalProductId || "";
   };
 
   const handleAddProduct = () => {
     if (!newProduct.sku || !newProduct.name || !newProduct.currentPrice) return;
-    
+
     const parsedPrice = parseFloat(newProduct.currentPrice);
     if (isNaN(parsedPrice) || parsedPrice <= 0) return;
-    
+
     onAddInternalProduct({
       sku: newProduct.sku,
       name: newProduct.name,
       currentPrice: parsedPrice,
       currency: newProduct.currency,
     });
-    
-    setNewProduct({ sku: '', name: '', currentPrice: '', currency: 'USD' });
+
+    setNewProduct({ sku: "", name: "", currentPrice: "", currency: "USD" });
     setShowAddProduct(false);
   };
 
@@ -82,9 +98,15 @@ export function ProductMapping({
               {/* Competitor Product Info */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-lg">{product.marketplace === 'shopee' ? '🛒' : product.marketplace === 'amazon' ? '📦' : '🏪'}</span>
+                  <span className="text-lg">
+                    {product.marketplace === "medsgo"
+                      ? "💊"
+                      : product.marketplace === "watsons"
+                      ? "🏪"
+                      : "🔗"}
+                  </span>
                   <span className="font-medium text-zinc-900 dark:text-zinc-100 truncate">
-                    {product.name || 'Product from URL'}
+                    {product.name || "Product from URL"}
                   </span>
                 </div>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate mt-1">
@@ -94,8 +116,18 @@ export function ProductMapping({
 
               {/* Arrow */}
               <div className="hidden md:block text-zinc-400">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M17 8l4 4m0 0l-4 4m4-4H3"
+                  />
                 </svg>
               </div>
 
@@ -123,33 +155,55 @@ export function ProductMapping({
 
       {/* Add Internal Product */}
       {!showAddProduct ? (
-        <Button variant="outline" onClick={() => setShowAddProduct(true)} className="w-full">
-          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+        <Button
+          variant="outline"
+          onClick={() => setShowAddProduct(true)}
+          className="w-full"
+        >
+          <svg
+            className="w-4 h-4 mr-2"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 4v16m8-8H4"
+            />
           </svg>
           Add Your Product
         </Button>
       ) : (
         <Card variant="outline" padding="md">
-          <h4 className="font-medium text-zinc-900 dark:text-zinc-100 mb-4">Add Internal Product</h4>
+          <h4 className="font-medium text-zinc-900 dark:text-zinc-100 mb-4">
+            Add Internal Product
+          </h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input
               label="SKU"
               value={newProduct.sku}
-              onChange={(e) => setNewProduct({ ...newProduct, sku: e.target.value })}
+              onChange={(e) =>
+                setNewProduct({ ...newProduct, sku: e.target.value })
+              }
               placeholder="e.g., PROD-001"
             />
             <Input
               label="Product Name"
               value={newProduct.name}
-              onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
+              onChange={(e) =>
+                setNewProduct({ ...newProduct, name: e.target.value })
+              }
               placeholder="e.g., Wireless Mouse"
             />
             <Input
               label="Current Price"
               type="number"
               value={newProduct.currentPrice}
-              onChange={(e) => setNewProduct({ ...newProduct, currentPrice: e.target.value })}
+              onChange={(e) =>
+                setNewProduct({ ...newProduct, currentPrice: e.target.value })
+              }
               placeholder="e.g., 29.99"
             />
             <div>
@@ -158,7 +212,9 @@ export function ProductMapping({
               </label>
               <select
                 value={newProduct.currency}
-                onChange={(e) => setNewProduct({ ...newProduct, currency: e.target.value })}
+                onChange={(e) =>
+                  setNewProduct({ ...newProduct, currency: e.target.value })
+                }
                 className="w-full px-4 py-2.5 rounded-lg border border-zinc-300 dark:border-zinc-700 
                   bg-white dark:bg-zinc-900 text-sm
                   focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
@@ -176,7 +232,9 @@ export function ProductMapping({
           </div>
           <div className="flex gap-2 mt-4">
             <Button onClick={handleAddProduct}>Add Product</Button>
-            <Button variant="ghost" onClick={() => setShowAddProduct(false)}>Cancel</Button>
+            <Button variant="ghost" onClick={() => setShowAddProduct(false)}>
+              Cancel
+            </Button>
           </div>
         </Card>
       )}
@@ -188,4 +246,3 @@ export function ProductMapping({
     </div>
   );
 }
-
