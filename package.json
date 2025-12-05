@@ -9,7 +9,12 @@
     "lint": "eslint"
   },
   "dependencies": {
+<<<<<<< HEAD
     "lucide-react": "^0.556.0",
+=======
+    "@supabase/supabase-js": "^2.86.2",
+    "date-fns": "^4.1.0",
+>>>>>>> 5a5a7979a8ea6051700b31b06cc4d81b874c8f86
     "next": "16.0.7",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
