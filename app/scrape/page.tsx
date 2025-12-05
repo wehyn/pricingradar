@@ -75,7 +75,7 @@ export default function ScrapePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           marketplace: selectedMarketplace,
-          saveToDb: false,
+          saveToDb: true,
           includeProducts: true,
         }),
       });

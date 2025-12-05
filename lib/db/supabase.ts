@@ -40,12 +40,21 @@ export interface DbPriceHistory {
 // Initialize Supabase client
 function getSupabaseClient(): SupabaseClient {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseKey =
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
 
   if (!supabaseUrl || !supabaseKey) {
+    console.error(
+      "[Supabase] Missing env vars - URL:",
+      !!supabaseUrl,
+      "KEY:",
+      !!supabaseKey
+    );
     throw new Error("Missing Supabase environment variables");
   }
 
+  console.log("[Supabase] Client initialized with URL:", supabaseUrl);
   return createClient(supabaseUrl, supabaseKey);
 }
 
@@ -227,11 +236,21 @@ export async function saveScrapedProducts(
   products: ScrapedProduct[],
   marketplace: MarketplaceType
 ): Promise<{ saved: number; errors: string[] }> {
+  console.log(
+    `[Supabase] saveScrapedProducts called for ${marketplace} with ${products.length} products`
+  );
   const errors: string[] = [];
   let saved = 0;
 
   // Ensure competitor exists
+  console.log(
+    `[Supabase] Looking up competitor for marketplace: ${marketplace}`
+  );
   let competitor = await getCompetitorByMarketplace(marketplace);
+  console.log(
+    `[Supabase] Competitor found:`,
+    competitor ? competitor.id : "null"
+  );
 
   if (!competitor) {
     // Create default competitor entry
@@ -264,6 +283,7 @@ export async function saveScrapedProducts(
 
   for (const product of products) {
     try {
+      console.log(`[Supabase] Upserting product: ${product.name}`);
       // Upsert product
       const dbProduct = await upsertProduct({
         competitor_id: competitor.id,
@@ -274,6 +294,7 @@ export async function saveScrapedProducts(
         external_id: product.id,
         image_url: product.imageUrl || null,
       });
+      console.log(`[Supabase] Product upserted with id: ${dbProduct.id}`);
 
       // Add price history entry
       await addPriceHistory({
@@ -285,9 +306,13 @@ export async function saveScrapedProducts(
         in_stock: product.inStock,
         scraped_at: product.scrapedAt.toISOString(),
       });
+      console.log(
+        `[Supabase] Price history added for product: ${dbProduct.id}`
+      );
 
       saved++;
     } catch (error) {
+      console.error(`[Supabase] Error saving product ${product.name}:`, error);
       errors.push(
         `Failed to save ${product.name}: ${(error as Error).message}`
       );
