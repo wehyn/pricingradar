@@ -863,7 +863,6 @@ export default function Dashboard() {
                   />
                 </div>
               </div>
-            )}
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
                 <tr>
@@ -1001,7 +1000,6 @@ export default function Dashboard() {
               </tbody>
             </table>
           </div>
-        </div>
         </>
         )}
 
