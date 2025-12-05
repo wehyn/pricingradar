@@ -9,26 +9,30 @@ import { AlertTriangle, TrendingUp, TrendingDown, DollarSign, Activity, RefreshC
 
 interface HistoryData {
   date: string;
-  myPrice: number;
-  amazonPrice: number;
-  bestbuyPrice: number;
+  myPrice?: number;
+  amazonPrice?: number;
+  bestbuyPrice?: number;
 }
 
 interface Competitor {
   name: string;
   price: number;
-  url: string;
+  url?: string;
+  marketplace?: string;
+  brand?: string;
+  dosage?: string;
 }
 
 interface Product {
-  id: number;
+  id: number | string;
   name: string;
-  sku: string;
-  myPrice: number;
+  sku?: string;
+  // myPrice kept for compatibility but not shown on main UI
+  myPrice?: number;
   competitors: Competitor[];
-  history: HistoryData[];
-  category: string;
-  status: 'Critical' | 'Stable' | 'Winning' | string;
+  history?: HistoryData[];
+  category?: string;
+  status?: 'Critical' | 'Stable' | 'Winning' | string;
 }
 
 interface Alert {
@@ -104,6 +108,40 @@ const INITIAL_PRODUCTS: Product[] = [
     category: "Storage",
     status: "Winning"
   }
+];
+
+// Demo side-by-side comparison data (used when no live MedsGo+Watsons intersection)
+const SAMPLE_COMPARE: Product[] = [
+  {
+    id: 'demo-1',
+    name: 'Sildenafil 50mg - 1 Box x 8 Tabs (Erecfil 50)',
+    sku: 'demo-sild-50-8',
+    competitors: [
+      { name: 'medsgo', marketplace: 'medsgo', price: 680 },
+      { name: 'watsons', marketplace: 'watsons', price: 835 },
+    ],
+    status: 'Monitoring',
+  },
+  {
+    id: 'demo-2',
+    name: 'Sildenafil 100mg - 1 Box x 10 Tabs (Spiagra 100)',
+    sku: 'demo-sild-100-10',
+    competitors: [
+      { name: 'medsgo', marketplace: 'medsgo', price: 950 },
+      { name: 'watsons', marketplace: 'watsons', price: 1002.5 },
+    ],
+    status: 'Monitoring',
+  },
+  {
+    id: 'demo-3',
+    name: 'Tadalafil 20mg - 1 Tablet (Dalafil)',
+    sku: 'demo-tada-20',
+    competitors: [
+      { name: 'medsgo', marketplace: 'medsgo', price: 90 },
+      { name: 'watsons', marketplace: 'watsons', price: 985.25 },
+    ],
+    status: 'Monitoring',
+  },
 ];
 
 // --- COMPONENTS ---
@@ -209,7 +247,9 @@ const ProductChart: React.FC<{ product: Product | null }> = ({ product }) => {
             contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
           />
           <Legend wrapperStyle={{ paddingTop: '20px' }}/>
-          <Line type="monotone" name="My Price" dataKey="myPrice" stroke="#3b82f6" strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
+          {product.history && product.history.some(d => typeof d.myPrice === 'number') && (
+            <Line type="monotone" name="My Price" dataKey="myPrice" stroke="#3b82f6" strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
+          )}
           <Line type="monotone" name="Amazon" dataKey="amazonPrice" stroke="#ef4444" strokeWidth={2} strokeDasharray="5 5" dot={false} />
           <Line type="monotone" name="BestBuy" dataKey="bestbuyPrice" stroke="#10b981" strokeWidth={2} strokeDasharray="5 5" dot={false} />
         </LineChart>
@@ -223,6 +263,8 @@ export default function Dashboard() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [lastScanAt, setLastScanAt] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'overview' | 'alerts'>('overview');
 
   // Calculate high-level stats
   const totalProducts = products.length;
@@ -241,29 +283,108 @@ export default function Dashboard() {
     const newAlerts: Alert[] = [];
     products.forEach(p => {
       const cheapest = p.competitors.reduce((prev, curr) => prev.price < curr.price ? prev : curr);
-      const variance = ((cheapest.price - p.myPrice) / p.myPrice) * 100;
+      const base = p.myPrice ?? (p.competitors.reduce((a,c)=>a+c.price,0)/Math.max(1,p.competitors.length));
+      const variance = ((cheapest.price - base) / base) * 100;
       if (variance < -5) {
-        newAlerts.push({ product: p, variance, competitor: cheapest, id: p.id });
+        newAlerts.push({ product: p, variance, competitor: cheapest, id: typeof p.id === 'number' ? p.id : parseInt(String(p.id).replace(/\D/g,'')) || 0 });
       }
     });
     setAlerts(newAlerts);
   }, [products]);
 
-  const handleScan = () => {
+  // Fetch live scrape from backend API and map to UI products
+  const handleScan = async () => {
     setIsScanning(true);
-    // Simulate a network request and data update
-    setTimeout(() => {
-      setProducts(prev => prev.map(p => {
-        // Randomly adjust competitor prices to simulate market movement
-        const newCompetitors = p.competitors.map(c => ({
-          ...c,
-          price: c.price + (Math.random() > 0.5 ? -2 : 2)
-        }));
-        return { ...p, competitors: newCompetitors };
-      }));
+    try {
+      const res = await fetch('/api/scrape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ marketplace: 'all', saveToDb: false, includeProducts: true })
+      });
+      if (!res.ok) {
+        console.error('Scrape API error', await res.text());
+        setIsScanning(false);
+        return;
+      }
+
+      const data = await res.json();
+      const all: any[] = data.allProducts || [];
+
+      // Attempt to pair MedsGo and Watsons products by normalized name / token overlap.
+      const medsgo = all.filter(p => (p.marketplace || '').toLowerCase() === 'medsgo');
+      const watsons = all.filter(p => (p.marketplace || '').toLowerCase() === 'watsons');
+
+      const normalize = (s: string) => (s || '').toString().toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+      const tokens = (s: string) => Array.from(new Set(normalize(s).split(' ').filter(Boolean)));
+
+      const usedWatsons = new Set<string>();
+      const mapped: Product[] = [];
+      let idx = 1;
+
+      for (const m of medsgo) {
+        const mName = m.name || m.id || '';
+        const mTokens = tokens(mName);
+        let best: any = null;
+        let bestScore = 0;
+        for (const w of watsons) {
+          if (usedWatsons.has(w.id)) continue;
+          const wTokens = tokens(w.name || w.id || '');
+          const common = mTokens.filter(t => wTokens.includes(t));
+          const score = common.length;
+          if (score > bestScore) {
+            bestScore = score;
+            best = w;
+          }
+        }
+
+        const competitors: Competitor[] = [];
+        competitors.push({ name: 'medsgo', price: m.price, url: m.url, marketplace: 'medsgo', brand: m.brand, dosage: m.dosage });
+        if (best && bestScore >= Math.max(1, Math.floor(mTokens.length / 3))) {
+          // accept match if there is at least minimal overlap
+          usedWatsons.add(best.id);
+          competitors.push({ name: 'watsons', price: best.price, url: best.url, marketplace: 'watsons', brand: best.brand, dosage: best.dosage });
+        }
+
+        const marketAvg = competitors.reduce((s: number, c: Competitor) => s + (c.price || 0), 0) / Math.max(1, competitors.length);
+        mapped.push({
+          id: `g-${idx++}`,
+          name: mName,
+          sku: m.id || undefined,
+          myPrice: Math.round(marketAvg * 100) / 100,
+          competitors,
+          status: competitors.length > 1 ? (Math.min(...competitors.map(c => c.price)) < marketAvg * 0.95 ? 'Critical' : 'Stable') : 'Monitoring'
+        });
+      }
+
+      // Add any remaining Watsons products that were not paired
+      for (const w of watsons) {
+        if (usedWatsons.has(w.id)) continue;
+        const competitors: Competitor[] = [{ name: 'watsons', price: w.price, url: w.url, marketplace: 'watsons', brand: w.brand, dosage: w.dosage }];
+        const marketAvg = competitors.reduce((s: number, c: Competitor) => s + (c.price || 0), 0) / Math.max(1, competitors.length);
+        mapped.push({
+          id: `g-${idx++}`,
+          name: w.name || w.id || 'Unknown',
+          sku: w.id || undefined,
+          myPrice: Math.round(marketAvg * 100) / 100,
+          competitors,
+          status: 'Monitoring'
+        });
+      }
+
+      setProducts(mapped);
+      setLastScanAt(new Date().toISOString());
+    } catch (err) {
+      console.error('Scan failed', err);
+    } finally {
       setIsScanning(false);
-    }, 2000);
+    }
   };
+
+  // Run an initial scan on mount to populate the main UI with scraped data
+  useEffect(() => {
+    handleScan();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const getStatusColor = (myPrice: number, competitors: Competitor[]) => {
     const minPrice = Math.min(...competitors.map(c => c.price));
@@ -275,6 +396,14 @@ export default function Dashboard() {
   };
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+  const formatCurrencyPHP = (val: number) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 }).format(val);
+
+  // Precompute display rows for MedsGo/Watsons comparison to avoid an IIFE inside JSX
+  const medsgoWatsonsFiltered = products.filter(p => {
+    const names = (p.competitors || []).map(c => (c.marketplace || '').toLowerCase());
+    return names.includes('medsgo') && names.includes('watsons');
+  });
+  const tableDisplay = medsgoWatsonsFiltered.length > 0 ? medsgoWatsonsFiltered : SAMPLE_COMPARE;
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
@@ -310,8 +439,29 @@ export default function Dashboard() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
-        {/* KPI SECTION */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        {/* TABS */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium ${activeTab === 'overview' ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-600'}`}
+            >
+              Overview
+            </button>
+            <button
+              onClick={() => setActiveTab('alerts')}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium ${activeTab === 'alerts' ? 'bg-rose-600 text-white' : 'bg-slate-50 text-slate-600'}`}
+            >
+              Alerts {alerts.length > 0 && <span className="ml-2 inline-block px-2 py-0.5 rounded-full text-xs bg-white text-rose-600 font-semibold">{alerts.length}</span>}
+            </button>
+          </div>
+          <div className="text-sm text-slate-500">Last scan: {lastScanAt ? new Date(lastScanAt).toLocaleString() : 'never'}</div>
+        </div>
+
+        {activeTab === 'overview' && (
+          <>
+            {/* KPI SECTION */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <KpiCard 
             title="Market Position" 
             value={`${avgMarketPos > 0 ? '+' : ''}${avgMarketPos.toFixed(1)}%`}
@@ -335,25 +485,6 @@ export default function Dashboard() {
           />
         </div>
 
-        {/* ALERTS SECTION */}
-        {alerts.length > 0 && (
-          <div className="mb-8">
-            <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-rose-500" />
-              Action Required ({alerts.length})
-            </h2>
-            <div className="space-y-2">
-              {alerts.map((alert, idx) => (
-                <AlertCard 
-                  key={idx} 
-                  {...alert} 
-                  onDismiss={() => setAlerts(prev => prev.filter((_, i) => i !== idx))} 
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* MAIN TABLE SECTION */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -369,23 +500,36 @@ export default function Dashboard() {
           </div>
 
           <div className="overflow-x-auto">
+            {/* Demo banner when using sample data */}
+            {products.filter(p => ((p.competitors||[]).map(c=> (c.marketplace||'').toLowerCase())).includes('medsgo') && (p.competitors||[]).map(c=> (c.marketplace||'').toLowerCase()).includes('watsons')).length === 0 && (
+              <div className="p-4 bg-yellow-50 border-l-4 border-yellow-300 text-yellow-800">
+                Showing demo comparison rows — run a live scan to replace with real data.
+                <button onClick={handleScan} className="ml-4 px-3 py-1 bg-yellow-600 text-white rounded">Run Scan</button>
+              </div>
+            )}
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
                 <tr>
-                  <th className="px-6 py-4 w-1/3">Product Name</th>
-                  <th className="px-6 py-4">My Price</th>
-                  <th className="px-6 py-4">Market Avg</th>
-                  <th className="px-6 py-4">Competitors</th>
-                  <th className="px-6 py-4 text-right">Status</th>
+                  <th className="px-6 py-4 w-2/5">Product</th>
+                  <th className="px-6 py-4">MedsGo</th>
+                  <th className="px-6 py-4">Watsons</th>
+                  <th className="px-6 py-4">Difference</th>
+                  <th className="px-6 py-4">Cheapest</th>
+                  <th className="px-6 py-4 text-right">Market Avg</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {products.map(product => {
-                  const marketAvg = product.competitors.reduce((acc, c) => acc + c.price, 0) / product.competitors.length;
-                  
+              <tbody>
+                {tableDisplay.map((product, idx) => {
+                  const medsgo = product.competitors.find(c => (c.marketplace || '').toLowerCase() === 'medsgo');
+                  const watsons = product.competitors.find(c => (c.marketplace || '').toLowerCase() === 'watsons');
+                  const marketAvg = product.competitors.length > 0 ? product.competitors.reduce((acc, c) => acc + c.price, 0) / product.competitors.length : 0;
+                  const diff = medsgo && watsons ? Math.round((medsgo.price - watsons.price) * 100) / 100 : 0;
+                  const diffPct = watsons && watsons.price ? Math.round((diff / watsons.price) * 1000) / 10 : 0;
+                  const cheapest = product.competitors.reduce((prev, cur) => (cur.price < prev.price ? cur : prev), product.competitors[0]);
+
                   return (
                     <React.Fragment key={product.id}>
-                      <tr 
+                      <tr
                         onClick={() => setSelectedProduct(selectedProduct?.id === product.id ? null : product)}
                         className={`hover:bg-blue-50/50 cursor-pointer transition-colors ${selectedProduct?.id === product.id ? 'bg-blue-50/80' : ''}`}
                       >
@@ -393,43 +537,73 @@ export default function Dashboard() {
                           <div className="font-semibold text-slate-900">{product.name}</div>
                           <div className="text-slate-500 text-xs mt-0.5">{product.sku}</div>
                         </td>
+
                         <td className="px-6 py-4">
-                          <div className="font-bold text-blue-700">{formatCurrency(product.myPrice)}</div>
-                        </td>
-                        <td className="px-6 py-4 text-slate-600">
-                          {formatCurrency(marketAvg)}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex gap-2">
-                            {product.competitors.map((comp, i) => {
-                              const isCheaper = comp.price < product.myPrice;
-                              return (
-                                <div key={i} className={`flex flex-col px-2 py-1 rounded border ${isCheaper ? 'bg-rose-50 border-rose-100' : 'bg-slate-50 border-slate-100'}`}>
-                                  <span className="text-[10px] text-slate-500 uppercase font-bold">{comp.name}</span>
-                                  <span className={`font-medium ${isCheaper ? 'text-rose-700' : 'text-slate-700'}`}>
-                                    {formatCurrency(comp.price)}
-                                  </span>
-                                </div>
-                              );
-                            })}
+                          <div className={`flex flex-col px-3 py-2 rounded-md border ${medsgo && medsgo.price < marketAvg ? 'bg-rose-50 border-rose-100' : 'bg-slate-50 border-slate-100'}`}>
+                            <div className="text-[10px] text-slate-500 uppercase font-bold">MEDSGO</div>
+                            <div className={`font-semibold ${medsgo && medsgo.price < marketAvg ? 'text-rose-700' : 'text-emerald-600'}`}>{medsgo ? formatCurrencyPHP(medsgo.price) : '—'}</div>
+                            <div className="text-[11px] text-slate-400 mt-1">{medsgo?.brand || medsgo?.dosage || ''}</div>
                           </div>
                         </td>
-                        <td className="px-6 py-4 text-right">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(product.myPrice, product.competitors)}`}>
-                            {product.status}
-                          </span>
+
+                        <td className="px-6 py-4">
+                          <div className={`flex flex-col px-3 py-2 rounded-md border ${watsons && watsons.price < marketAvg ? 'bg-rose-50 border-rose-100' : 'bg-slate-50 border-slate-100'}`}>
+                            <div className="text-[10px] text-slate-500 uppercase font-bold">WATSONS</div>
+                            <div className={`font-semibold ${watsons && watsons.price < marketAvg ? 'text-rose-700' : 'text-emerald-600'}`}>{watsons ? formatCurrencyPHP(watsons.price) : '—'}</div>
+                            <div className="text-[11px] text-slate-400 mt-1">{watsons?.brand || watsons?.dosage || ''}</div>
+                          </div>
+                        </td>
+
+                        <td className="px-6 py-4">
+                          <div className="text-right">
+                            {typeof diff === 'number' ? (
+                              <div className={`font-semibold ${diff < 0 ? 'text-emerald-500' : 'text-rose-600'}`}>{diff < 0 ? '' : '+'}{formatCurrencyPHP(Math.abs(diff))}</div>
+                            ) : '—'}
+                            <div className={`text-xs ${diffPct < 0 ? 'text-emerald-500' : 'text-rose-600'}`}>{diffPct ? `${diffPct > 0 ? '+' : ''}${diffPct.toFixed(1)}%` : ''}</div>
+                          </div>
+                        </td>
+
+                        <td className="px-6 py-4">
+                          <div className="flex justify-start">
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${cheapest.marketplace === 'medsgo' ? 'bg-purple-700 text-white' : 'bg-sky-700 text-white'}`}>
+                              {cheapest.marketplace?.toUpperCase()}
+                            </span>
+                          </div>
+                        </td>
+
+                        <td className="px-6 py-4 text-right text-slate-600">
+                          {formatCurrencyPHP(marketAvg)}
                         </td>
                       </tr>
-                      {/* EXPANDABLE CHART ROW */}
+
                       {selectedProduct?.id === product.id && (
                         <tr className="bg-slate-50/50">
-                          <td colSpan={5} className="px-6 py-4 border-b border-slate-200">
+                          <td colSpan={6} className="px-6 py-4 border-b border-slate-200">
                             <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
                               <div className="flex justify-between items-center mb-2">
-                                <h3 className="font-semibold text-slate-800 text-sm">30-Day Price History</h3>
-                                <button className="text-blue-600 text-xs font-medium hover:underline">View Full Analysis</button>
+                                <h3 className="font-semibold text-slate-800 text-sm">Product Links</h3>
+                                <button className="text-blue-600 text-xs font-medium hover:underline" onClick={() => window.open(product.competitors[0]?.url || '#', '_blank')}>Open Top Result</button>
                               </div>
-                              <ProductChart product={product} />
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                {product.competitors.map((c, i) => (
+                                  <div key={i} className="p-3 border rounded-md bg-slate-50">
+                                    <div className="flex items-center justify-between">
+                                      <div>
+                                        <div className="text-sm font-semibold text-slate-800">{(c.marketplace || c.name || '').toString().toUpperCase()}</div>
+                                        <div className="text-xs text-slate-500">{c.brand || c.dosage || ''}</div>
+                                        <div className="text-sm font-medium mt-1">{formatCurrencyPHP(c.price)}</div>
+                                      </div>
+                                      <div className="ml-4">
+                                        {c.url ? (
+                                          <a href={c.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-3 py-1 rounded bg-slate-900 text-white text-xs">Open</a>
+                                        ) : (
+                                          <span className="text-xs text-slate-400">No URL</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
                           </td>
                         </tr>
@@ -441,6 +615,42 @@ export default function Dashboard() {
             </table>
           </div>
         </div>
+        </>
+        )}
+
+        {activeTab === 'alerts' && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-rose-500" />
+                Action Required
+                <span className="text-sm text-slate-500">({alerts.length})</span>
+              </h2>
+              <div className="flex items-center gap-2">
+                <button onClick={() => { setActiveTab('overview'); }} className="text-sm text-slate-600 hover:underline">Back to Overview</button>
+                <button onClick={handleScan} disabled={isScanning} className={`ml-2 px-3 py-1.5 rounded text-sm ${isScanning ? 'bg-slate-100 text-slate-400' : 'bg-white text-slate-700 border border-slate-200'}`}>
+                  {isScanning ? 'Scanning...' : 'Run Scan'}
+                </button>
+              </div>
+            </div>
+
+            {alerts.length === 0 ? (
+              <div className="p-6 bg-slate-50 rounded-md border border-slate-100 text-slate-600">
+                No active alerts. Run a scan or configure thresholds to start monitoring.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {alerts.map((alert, idx) => (
+                  <AlertCard 
+                    key={idx} 
+                    {...alert} 
+                    onDismiss={() => setAlerts(prev => prev.filter((_, i) => i !== idx))} 
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </main>
     </div>
   );
