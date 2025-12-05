@@ -7,6 +7,8 @@ interface ScrapedProduct {
   name: string;
   brand?: string;
   dosage?: string;
+  quantity?: number;
+  pricePerUnit?: number;
   price: number;
   originalPrice?: number;
   discountPercent?: number;
@@ -40,10 +42,10 @@ interface ComparisonGroup {
     medsgo?: ScrapedProduct;
     watsons?: ScrapedProduct;
   };
-  priceDiff?: number;
+  priceDiff?: number; // Difference in price per unit
   priceDiffPercent?: number;
   cheapest?: string;
-  marketAverage?: number;
+  marketAverage?: number; // Average price per unit
 }
 
 interface Alert {
@@ -130,42 +132,54 @@ export default function ScrapePage() {
       }
 
       const group = groups.get(key)!;
+      // Use pricePerUnit for comparison (fallback to price if not available)
+      const productPricePerUnit = product.pricePerUnit || product.price;
+
       if (product.marketplace === "medsgo") {
-        // Keep the cheapest if multiple
+        // Keep the cheapest per unit if multiple
+        const existingPricePerUnit =
+          group.products.medsgo?.pricePerUnit || group.products.medsgo?.price;
         if (
           !group.products.medsgo ||
-          product.price < group.products.medsgo.price
+          productPricePerUnit < (existingPricePerUnit || Infinity)
         ) {
           group.products.medsgo = product;
         }
       } else if (product.marketplace === "watsons") {
+        const existingPricePerUnit =
+          group.products.watsons?.pricePerUnit || group.products.watsons?.price;
         if (
           !group.products.watsons ||
-          product.price < group.products.watsons.price
+          productPricePerUnit < (existingPricePerUnit || Infinity)
         ) {
           group.products.watsons = product;
         }
       }
     });
 
-    // Calculate price differences and market averages
+    // Calculate price differences and market averages using PRICE PER UNIT
     return Array.from(groups.values())
       .map((group) => {
-        const medsgoPrice = group.products.medsgo?.price;
-        const watsonsPrice = group.products.watsons?.price;
+        // Use pricePerUnit for fair comparison
+        const medsgoPricePerUnit =
+          group.products.medsgo?.pricePerUnit || group.products.medsgo?.price;
+        const watsonsPricePerUnit =
+          group.products.watsons?.pricePerUnit || group.products.watsons?.price;
 
-        if (medsgoPrice && watsonsPrice) {
-          group.priceDiff = medsgoPrice - watsonsPrice;
+        if (medsgoPricePerUnit && watsonsPricePerUnit) {
+          group.priceDiff = medsgoPricePerUnit - watsonsPricePerUnit;
           group.priceDiffPercent =
-            ((medsgoPrice - watsonsPrice) / watsonsPrice) * 100;
-          group.cheapest = medsgoPrice <= watsonsPrice ? "medsgo" : "watsons";
-          group.marketAverage = (medsgoPrice + watsonsPrice) / 2;
-        } else if (medsgoPrice) {
+            ((medsgoPricePerUnit - watsonsPricePerUnit) / watsonsPricePerUnit) *
+            100;
+          group.cheapest =
+            medsgoPricePerUnit <= watsonsPricePerUnit ? "medsgo" : "watsons";
+          group.marketAverage = (medsgoPricePerUnit + watsonsPricePerUnit) / 2;
+        } else if (medsgoPricePerUnit) {
           group.cheapest = "medsgo";
-          group.marketAverage = medsgoPrice;
-        } else if (watsonsPrice) {
+          group.marketAverage = medsgoPricePerUnit;
+        } else if (watsonsPricePerUnit) {
           group.cheapest = "watsons";
-          group.marketAverage = watsonsPrice;
+          group.marketAverage = watsonsPricePerUnit;
         }
 
         return group;
@@ -198,7 +212,7 @@ export default function ScrapePage() {
       }
     });
 
-    // Find price comparison opportunities
+    // Find price comparison opportunities (using price per unit)
     comparisonGroups.forEach((group) => {
       if (group.products.medsgo && group.products.watsons) {
         const diff = Math.abs(group.priceDiffPercent || 0);
@@ -206,22 +220,35 @@ export default function ScrapePage() {
           const cheaper = group.cheapest === "medsgo" ? "MedsGo" : "Watsons";
           const moreExpensive =
             group.cheapest === "medsgo" ? "Watsons" : "MedsGo";
+          const cheaperProduct =
+            group.cheapest === "medsgo"
+              ? group.products.medsgo
+              : group.products.watsons;
+          const expensiveProduct =
+            group.cheapest === "medsgo"
+              ? group.products.watsons
+              : group.products.medsgo;
+          const cheaperPricePerUnit =
+            cheaperProduct.pricePerUnit || cheaperProduct.price;
+          const expensivePricePerUnit =
+            expensiveProduct.pricePerUnit || expensiveProduct.price;
+
           alertsList.push({
             type: "cheapest",
             severity: "warning",
             title: `${group.ingredient} ${
               group.dosage
-            }: ${cheaper} is ${diff.toFixed(0)}% cheaper`,
-            message: `${cheaper} sells at ₱${(group.cheapest === "medsgo"
-              ? group.products.medsgo.price
-              : group.products.watsons.price
-            ).toFixed(2)} vs ${moreExpensive} at ₱${(group.cheapest === "medsgo"
-              ? group.products.watsons.price
-              : group.products.medsgo.price
-            ).toFixed(2)}`,
+            }: ${cheaper} is ${diff.toFixed(0)}% cheaper per tablet`,
+            message: `${cheaper} sells at ₱${cheaperPricePerUnit.toFixed(
+              2
+            )}/tab (${
+              cheaperProduct.quantity || 1
+            } tabs) vs ${moreExpensive} at ₱${expensivePricePerUnit.toFixed(
+              2
+            )}/tab (${expensiveProduct.quantity || 1} tabs)`,
             action: `Consider pricing GoRocky's ${group.ingredient} ${
               group.dosage
-            } competitively around ₱${group.marketAverage?.toFixed(2)}`,
+            } competitively around ₱${group.marketAverage?.toFixed(2)}/tablet`,
           });
         }
       }
@@ -501,7 +528,17 @@ export default function ScrapePage() {
                                   : "text-zinc-900 dark:text-zinc-100"
                               }`}
                             >
-                              {formatPrice(group.products.medsgo.price)}
+                              {formatPrice(
+                                group.products.medsgo.pricePerUnit ||
+                                  group.products.medsgo.price
+                              )}
+                              <span className="text-xs font-normal text-zinc-500">
+                                /tab
+                              </span>
+                            </div>
+                            <div className="text-xs text-zinc-500">
+                              {formatPrice(group.products.medsgo.price)} (
+                              {group.products.medsgo.quantity || 1} tabs)
                             </div>
                             {group.products.medsgo.discountPercent && (
                               <div className="text-xs text-emerald-600">
@@ -526,7 +563,17 @@ export default function ScrapePage() {
                                   : "text-zinc-900 dark:text-zinc-100"
                               }`}
                             >
-                              {formatPrice(group.products.watsons.price)}
+                              {formatPrice(
+                                group.products.watsons.pricePerUnit ||
+                                  group.products.watsons.price
+                              )}
+                              <span className="text-xs font-normal text-zinc-500">
+                                /tab
+                              </span>
+                            </div>
+                            <div className="text-xs text-zinc-500">
+                              {formatPrice(group.products.watsons.price)} (
+                              {group.products.watsons.quantity || 1} tabs)
                             </div>
                             {group.products.watsons.discountPercent && (
                               <div className="text-xs text-emerald-600">
@@ -553,7 +600,7 @@ export default function ScrapePage() {
                             }`}
                           >
                             {group.priceDiff > 0 ? "+" : ""}
-                            {formatPrice(group.priceDiff)}
+                            {formatPrice(group.priceDiff)}/tab
                             <div className="text-xs">
                               ({group.priceDiffPercent! > 0 ? "+" : ""}
                               {group.priceDiffPercent!.toFixed(1)}%)

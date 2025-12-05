@@ -123,6 +123,54 @@ export function extractDosage(productName: string): string | undefined {
   return match ? `${match[1]}mg` : undefined;
 }
 
+// Extract quantity (tablet/unit count) from product name
+// Handles patterns like: "8 Tablets", "10 tabs", "1 Tablet", "4s", "Box of 4", "x4", "4 pcs"
+export function extractQuantity(productName: string): number {
+  const name = productName.toLowerCase();
+
+  // Pattern: "X tablets/tabs/tab/pcs/capsules"
+  const tabletMatch = name.match(
+    /(\d+)\s*(tablets?|tabs?|pcs?|capsules?|pieces?|units?)/i
+  );
+  if (tabletMatch) {
+    return parseInt(tabletMatch[1], 10);
+  }
+
+  // Pattern: "Xs" at end (e.g., "4s", "8s") - common in Philippines
+  const sMatch = name.match(/(\d+)s\b/i);
+  if (sMatch) {
+    return parseInt(sMatch[1], 10);
+  }
+
+  // Pattern: "Box of X" or "Pack of X"
+  const boxMatch = name.match(/(box|pack)\s*(of)?\s*(\d+)/i);
+  if (boxMatch) {
+    return parseInt(boxMatch[3], 10);
+  }
+
+  // Pattern: "xX" at end (e.g., "x4", "x10")
+  const xMatch = name.match(/x(\d+)\b/i);
+  if (xMatch) {
+    return parseInt(xMatch[1], 10);
+  }
+
+  // Pattern: "(X)" - quantity in parentheses
+  const parenMatch = name.match(/\((\d+)\)/);
+  if (parenMatch && parseInt(parenMatch[1], 10) <= 100) {
+    // Avoid matching dosage in parentheses
+    return parseInt(parenMatch[1], 10);
+  }
+
+  // Default to 1 if no quantity found (assume single unit)
+  return 1;
+}
+
+// Calculate price per unit
+export function calculatePricePerUnit(price: number, quantity: number): number {
+  if (quantity <= 0) return price;
+  return Math.round((price / quantity) * 100) / 100; // Round to 2 decimal places
+}
+
 // Clean product name by removing common noise
 export function cleanProductName(name: string): string {
   return name.replace(/\s+/g, " ").replace(/\n/g, " ").trim();

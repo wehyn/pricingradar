@@ -5,6 +5,8 @@ import {
   calculateDiscount,
   extractBrand,
   extractDosage,
+  extractQuantity,
+  calculatePricePerUnit,
   cleanProductName,
   sleep,
 } from "./index";
@@ -200,6 +202,11 @@ export class MedsGoScraper extends BaseScraper {
 
     for (const product of products) {
       const name = cleanProductName(product.name);
+      const quantity = extractQuantity(name);
+      const pricePerUnit = calculatePricePerUnit(
+        product.currentPrice,
+        quantity
+      );
 
       const discountPercent =
         product.originalPrice &&
@@ -213,6 +220,8 @@ export class MedsGoScraper extends BaseScraper {
         name,
         brand: product.brand || extractBrand(name),
         dosage: product.dosage || extractDosage(name),
+        quantity,
+        pricePerUnit,
         price: product.currentPrice,
         originalPrice: product.originalPrice || undefined,
         discountPercent,
