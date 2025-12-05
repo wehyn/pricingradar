@@ -4,17 +4,36 @@
  */
 
 import { chromium } from "playwright";
+import fs from "fs";
 
-const BRAVE_PATH =
-  "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser";
-
+const BRAVE_PATH = "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser";
+const CHROME_WIN_PATH = `C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe`;
+const CHROME_WIN_PATH_X86 = `C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe`;
 async function exploreMedsGo() {
-  console.log("🚀 Launching Brave browser...\n");
+  console.log("🚀 Launching browser...\n");
 
-  const browser = await chromium.launch({
-    executablePath: BRAVE_PATH,
-    headless: true,
-  });
+  const isWin = process.platform === "win32";
+  const isMac = process.platform === "darwin";
+
+  const launchOpts: any = { headless: true };
+  if (process.env.CHROME_EXECUTABLE) {
+    launchOpts.executablePath = process.env.CHROME_EXECUTABLE;
+  } else if (isWin) {
+    launchOpts.channel = "chrome";
+    if (fs.existsSync(CHROME_WIN_PATH)) {
+      launchOpts.executablePath = CHROME_WIN_PATH;
+      delete launchOpts.channel;
+    } else if (fs.existsSync(CHROME_WIN_PATH_X86)) {
+      launchOpts.executablePath = CHROME_WIN_PATH_X86;
+      delete launchOpts.channel;
+    }
+  } else if (isMac && fs.existsSync(BRAVE_PATH)) {
+    launchOpts.executablePath = BRAVE_PATH;
+  } else {
+    launchOpts.channel = "chrome";
+  }
+
+  const browser = await chromium.launch(launchOpts);
 
   const context = await browser.newContext({
     userAgent:
