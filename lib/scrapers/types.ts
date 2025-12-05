@@ -7,6 +7,8 @@ export interface ScrapedProduct {
   name: string;
   brand?: string;
   dosage?: string;
+  quantity?: number; // Number of tablets/units in pack
+  pricePerUnit?: number; // Price per tablet/unit
   price: number;
   originalPrice?: number;
   discountPercent?: number;
