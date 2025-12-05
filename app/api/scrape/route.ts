@@ -86,15 +86,25 @@ export async function POST(
 
         // Save to database if requested
         if (saveToDb && products.length > 0) {
+          console.log(
+            `[DB] Saving ${products.length} products from ${mp} to database...`
+          );
           try {
             const saveResult = await saveScrapedProducts(products, mp);
             savedToDbCount = saveResult.saved;
+            console.log(`[DB] Saved ${saveResult.saved} products from ${mp}`);
             if (saveResult.errors.length > 0) {
+              console.log(`[DB] Errors:`, saveResult.errors);
               errors.push(...saveResult.errors);
             }
           } catch (dbError) {
+            console.error(`[DB] Database error for ${mp}:`, dbError);
             errors.push(`Database error: ${(dbError as Error).message}`);
           }
+        } else {
+          console.log(
+            `[DB] Skipping save: saveToDb=${saveToDb}, products.length=${products.length}`
+          );
         }
       } catch (error) {
         errors.push(`Scraping error: ${(error as Error).message}`);

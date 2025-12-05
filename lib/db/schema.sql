@@ -96,6 +96,16 @@ CREATE TABLE IF NOT EXISTS scrape_logs (
   errors TEXT [],
   scraped_at TIMESTAMPTZ DEFAULT NOW()
 );
+-- Disable RLS for all tables (for development/server-side access)
+-- In production, you may want to enable RLS with proper policies
+ALTER TABLE competitors DISABLE ROW LEVEL SECURITY;
+ALTER TABLE products DISABLE ROW LEVEL SECURITY;
+ALTER TABLE price_history DISABLE ROW LEVEL SECURITY;
+ALTER TABLE internal_products DISABLE ROW LEVEL SECURITY;
+ALTER TABLE product_mappings DISABLE ROW LEVEL SECURITY;
+ALTER TABLE alert_thresholds DISABLE ROW LEVEL SECURITY;
+ALTER TABLE alerts DISABLE ROW LEVEL SECURITY;
+ALTER TABLE scrape_logs DISABLE ROW LEVEL SECURITY;
 -- Indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_products_competitor ON products(competitor_id);
 CREATE INDEX IF NOT EXISTS idx_products_url ON products(url);
