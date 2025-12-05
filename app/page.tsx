@@ -65,6 +65,39 @@ const GENERATE_HISTORY = (): HistoryData[] => {
   return data;
 };
 
+// Generate a synthetic 30-day history from current competitor prices
+const GENERATE_HISTORY_FROM_COMPETITORS = (competitors: Competitor[], days = 30): HistoryData[] => {
+  const data: HistoryData[] = [];
+  const today = new Date();
+
+  // pick reference prices
+  const medsgo = competitors.find(c => (c.marketplace || c.name || '').toString().toLowerCase() === 'medsgo');
+  const watsons = competitors.find(c => (c.marketplace || c.name || '').toString().toLowerCase() === 'watsons');
+  const baseMed = medsgo ? medsgo.price : (competitors[0]?.price ?? 0);
+  const baseWat = watsons ? watsons.price : (competitors[1]?.price ?? baseMed);
+  const marketAvg = competitors.length > 0 ? competitors.reduce((s,c)=>s+(c.price||0),0)/competitors.length : (baseMed + baseWat)/2;
+
+  for (let i = days; i >= 0; i--) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - i);
+
+    // create small random walk around base prices
+    const noise = (seed: number) => ((Math.sin((date.getTime()/86400000) + seed) + (Math.random()-0.5)) * 0.02);
+    const myPrice = Math.round((marketAvg * (1 + noise(1))) * 100) / 100;
+    const medsgoPrice = Math.round((baseMed * (1 + noise(2))) * 100) / 100;
+    const watsonsPrice = Math.round((baseWat * (1 + noise(3))) * 100) / 100;
+
+    data.push({
+      date: date.toISOString().split('T')[0],
+      myPrice,
+      medsgoPrice,
+      watsonsPrice,
+    } as unknown as HistoryData);
+  }
+
+  return data;
+};
+
 const INITIAL_PRODUCTS: Product[] = [
   {
     id: 1,
@@ -247,11 +280,15 @@ const ProductChart: React.FC<{ product: Product | null }> = ({ product }) => {
             contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
           />
           <Legend wrapperStyle={{ paddingTop: '20px' }}/>
-          {product.history && product.history.some(d => typeof d.myPrice === 'number') && (
+          {product.history && product.history.some(d => typeof (d as any).myPrice === 'number') && (
             <Line type="monotone" name="My Price" dataKey="myPrice" stroke="#3b82f6" strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
           )}
-          <Line type="monotone" name="Amazon" dataKey="amazonPrice" stroke="#ef4444" strokeWidth={2} strokeDasharray="5 5" dot={false} />
-          <Line type="monotone" name="BestBuy" dataKey="bestbuyPrice" stroke="#10b981" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+          {product.history && product.history.some(d => typeof (d as any).medsgoPrice === 'number') && (
+            <Line type="monotone" name="MedsGo" dataKey="medsgoPrice" stroke="#ef4444" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+          )}
+          {product.history && product.history.some(d => typeof (d as any).watsonsPrice === 'number') && (
+            <Line type="monotone" name="Watsons" dataKey="watsonsPrice" stroke="#10b981" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+          )}
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -265,6 +302,7 @@ export default function Dashboard() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [lastScanAt, setLastScanAt] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'alerts'>('overview');
+  const [expandedView, setExpandedView] = useState<'links' | 'history'>('links');
 
   // Calculate high-level stats
   const totalProducts = products.length;
@@ -352,6 +390,7 @@ export default function Dashboard() {
           sku: m.id || undefined,
           myPrice: Math.round(marketAvg * 100) / 100,
           competitors,
+          history: GENERATE_HISTORY_FROM_COMPETITORS(competitors),
           status: competitors.length > 1 ? (Math.min(...competitors.map(c => c.price)) < marketAvg * 0.95 ? 'Critical' : 'Stable') : 'Monitoring'
         });
       }
@@ -367,6 +406,7 @@ export default function Dashboard() {
           sku: w.id || undefined,
           myPrice: Math.round(marketAvg * 100) / 100,
           competitors,
+          history: GENERATE_HISTORY_FROM_COMPETITORS(competitors),
           status: 'Monitoring'
         });
       }
@@ -530,7 +570,14 @@ export default function Dashboard() {
                   return (
                     <React.Fragment key={product.id}>
                       <tr
-                        onClick={() => setSelectedProduct(selectedProduct?.id === product.id ? null : product)}
+                        onClick={() => {
+                          if (selectedProduct?.id === product.id) {
+                            setSelectedProduct(null);
+                          } else {
+                            setSelectedProduct(product);
+                            setExpandedView('links');
+                          }
+                        }}
                         className={`hover:bg-blue-50/50 cursor-pointer transition-colors ${selectedProduct?.id === product.id ? 'bg-blue-50/80' : ''}`}
                       >
                         <td className="px-6 py-4">
@@ -581,29 +628,52 @@ export default function Dashboard() {
                           <td colSpan={6} className="px-6 py-4 border-b border-slate-200">
                             <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
                               <div className="flex justify-between items-center mb-2">
-                                <h3 className="font-semibold text-slate-800 text-sm">Product Links</h3>
-                                <button className="text-blue-600 text-xs font-medium hover:underline" onClick={() => window.open(product.competitors[0]?.url || '#', '_blank')}>Open Top Result</button>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => setExpandedView('links')}
+                                    className={`px-3 py-1 rounded-md text-sm ${expandedView === 'links' ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-600'}`}
+                                  >
+                                    Links
+                                  </button>
+                                  <button
+                                    onClick={() => setExpandedView('history')}
+                                    className={`px-3 py-1 rounded-md text-sm ${expandedView === 'history' ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-600'}`}
+                                  >
+                                    History
+                                  </button>
+                                </div>
+                                <div>
+                                  <button className="text-blue-600 text-xs font-medium hover:underline mr-3" onClick={() => window.open(product.competitors[0]?.url || '#', '_blank')}>Open Top Result</button>
+                                  <button className="text-sm text-slate-600" onClick={() => setSelectedProduct(null)}>Close</button>
+                                </div>
                               </div>
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                {product.competitors.map((c, i) => (
-                                  <div key={i} className="p-3 border rounded-md bg-slate-50">
-                                    <div className="flex items-center justify-between">
-                                      <div>
-                                        <div className="text-sm font-semibold text-slate-800">{(c.marketplace || c.name || '').toString().toUpperCase()}</div>
-                                        <div className="text-xs text-slate-500">{c.brand || c.dosage || ''}</div>
-                                        <div className="text-sm font-medium mt-1">{formatCurrencyPHP(c.price)}</div>
-                                      </div>
-                                      <div className="ml-4">
-                                        {c.url ? (
-                                          <a href={c.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-3 py-1 rounded bg-slate-900 text-white text-xs">Open</a>
-                                        ) : (
-                                          <span className="text-xs text-slate-400">No URL</span>
-                                        )}
+
+                              {expandedView === 'links' ? (
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                  {product.competitors.map((c, i) => (
+                                    <div key={i} className="p-3 border rounded-md bg-slate-50">
+                                      <div className="flex items-center justify-between">
+                                        <div>
+                                          <div className="text-sm font-semibold text-slate-800">{(c.marketplace || c.name || '').toString().toUpperCase()}</div>
+                                          <div className="text-xs text-slate-500">{c.brand || c.dosage || ''}</div>
+                                          <div className="text-sm font-medium mt-1">{formatCurrencyPHP(c.price)}</div>
+                                        </div>
+                                        <div className="ml-4">
+                                          {c.url ? (
+                                            <a href={c.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-3 py-1 rounded bg-slate-900 text-white text-xs">Open</a>
+                                          ) : (
+                                            <span className="text-xs text-slate-400">No URL</span>
+                                          )}
+                                        </div>
                                       </div>
                                     </div>
-                                  </div>
-                                ))}
-                              </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div>
+                                  <ProductChart product={product} />
+                                </div>
+                              )}
                             </div>
                           </td>
                         </tr>
