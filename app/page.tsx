@@ -138,29 +138,42 @@ const GENERATE_HISTORY = (): HistoryData[] => {
 };
 
 // Generate a synthetic 30-day history from current competitor prices
-const GENERATE_HISTORY_FROM_COMPETITORS = (competitors: Competitor[], days = 30): HistoryData[] => {
+const GENERATE_HISTORY_FROM_COMPETITORS = (
+  competitors: Competitor[],
+  days = 30
+): HistoryData[] => {
   const data: HistoryData[] = [];
   const today = new Date();
 
   // pick reference prices
-  const medsgo = competitors.find(c => (c.marketplace || c.name || '').toString().toLowerCase() === 'medsgo');
-  const watsons = competitors.find(c => (c.marketplace || c.name || '').toString().toLowerCase() === 'watsons');
-  const baseMed = medsgo ? medsgo.price : (competitors[0]?.price ?? 0);
-  const baseWat = watsons ? watsons.price : (competitors[1]?.price ?? baseMed);
-  const marketAvg = competitors.length > 0 ? competitors.reduce((s,c)=>s+(c.price||0),0)/competitors.length : (baseMed + baseWat)/2;
+  const medsgo = competitors.find(
+    (c) => (c.marketplace || c.name || "").toString().toLowerCase() === "medsgo"
+  );
+  const watsons = competitors.find(
+    (c) =>
+      (c.marketplace || c.name || "").toString().toLowerCase() === "watsons"
+  );
+  const baseMed = medsgo ? medsgo.price : competitors[0]?.price ?? 0;
+  const baseWat = watsons ? watsons.price : competitors[1]?.price ?? baseMed;
+  const marketAvg =
+    competitors.length > 0
+      ? competitors.reduce((s, c) => s + (c.price || 0), 0) / competitors.length
+      : (baseMed + baseWat) / 2;
 
   for (let i = days; i >= 0; i--) {
     const date = new Date(today);
     date.setDate(date.getDate() - i);
 
     // create small random walk around base prices
-    const noise = (seed: number) => ((Math.sin((date.getTime()/86400000) + seed) + (Math.random()-0.5)) * 0.02);
-    const myPrice = Math.round((marketAvg * (1 + noise(1))) * 100) / 100;
-    const medsgoPrice = Math.round((baseMed * (1 + noise(2))) * 100) / 100;
-    const watsonsPrice = Math.round((baseWat * (1 + noise(3))) * 100) / 100;
+    const noise = (seed: number) =>
+      (Math.sin(date.getTime() / 86400000 + seed) + (Math.random() - 0.5)) *
+      0.02;
+    const myPrice = Math.round(marketAvg * (1 + noise(1)) * 100) / 100;
+    const medsgoPrice = Math.round(baseMed * (1 + noise(2)) * 100) / 100;
+    const watsonsPrice = Math.round(baseWat * (1 + noise(3)) * 100) / 100;
 
     data.push({
-      date: date.toISOString().split('T')[0],
+      date: date.toISOString().split("T")[0],
       myPrice,
       medsgoPrice,
       watsonsPrice,
@@ -482,8 +495,10 @@ export default function Dashboard() {
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [lastScanAt, setLastScanAt] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'alerts'>('overview');
-  const [expandedView, setExpandedView] = useState<'links' | 'history'>('links');
+  const [activeTab, setActiveTab] = useState<"overview" | "alerts">("overview");
+  const [expandedView, setExpandedView] = useState<"links" | "history">(
+    "links"
+  );
 
   // Calculate high-level stats (using price per unit)
   const totalProducts = products.length;
@@ -652,7 +667,12 @@ export default function Dashboard() {
           myPrice: Math.round(marketAvg * 100) / 100,
           competitors,
           history: GENERATE_HISTORY_FROM_COMPETITORS(competitors),
-          status: competitors.length > 1 ? (Math.min(...competitors.map(c => c.price)) < marketAvg * 0.95 ? 'Critical' : 'Stable') : 'Monitoring'
+          status:
+            competitors.length > 1
+              ? Math.min(...competitors.map((c) => c.price)) < marketAvg * 0.95
+                ? "Critical"
+                : "Stable"
+              : "Monitoring",
         });
       }
 
@@ -686,7 +706,7 @@ export default function Dashboard() {
           myPrice: Math.round(marketAvg * 100) / 100,
           competitors,
           history: GENERATE_HISTORY_FROM_COMPETITORS(competitors),
-          status: 'Monitoring'
+          status: "Monitoring",
         });
       }
 
@@ -863,144 +883,327 @@ export default function Dashboard() {
                   />
                 </div>
               </div>
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
-                <tr>
-                  <th className="px-6 py-4 w-2/5">Product</th>
-                  <th className="px-6 py-4">MedsGo</th>
-                  <th className="px-6 py-4">Watsons</th>
-                  <th className="px-6 py-4">Difference</th>
-                  <th className="px-6 py-4">Cheapest</th>
-                  <th className="px-6 py-4 text-right">Market Avg</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tableDisplay.map((product, idx) => {
-                  const medsgo = product.competitors.find(c => (c.marketplace || '').toLowerCase() === 'medsgo');
-                  const watsons = product.competitors.find(c => (c.marketplace || '').toLowerCase() === 'watsons');
-                  const marketAvg = product.competitors.length > 0 ? product.competitors.reduce((acc, c) => acc + c.price, 0) / product.competitors.length : 0;
-                  const diff = medsgo && watsons ? Math.round((medsgo.price - watsons.price) * 100) / 100 : 0;
-                  const diffPct = watsons && watsons.price ? Math.round((diff / watsons.price) * 1000) / 10 : 0;
-                  const cheapest = product.competitors.reduce((prev, cur) => (cur.price < prev.price ? cur : prev), product.competitors[0]);
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
+                  <tr>
+                    <th className="px-6 py-4 w-2/5">Product</th>
+                    <th className="px-6 py-4">
+                      MedsGo{" "}
+                      <span className="text-[10px] font-normal">
+                        (per unit)
+                      </span>
+                    </th>
+                    <th className="px-6 py-4">
+                      Watsons{" "}
+                      <span className="text-[10px] font-normal">
+                        (per unit)
+                      </span>
+                    </th>
+                    <th className="px-6 py-4">Difference</th>
+                    <th className="px-6 py-4">Cheapest</th>
+                    <th className="px-6 py-4 text-right">Avg/Unit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tableDisplay.map((product, idx) => {
+                    const medsgo = product.competitors.find(
+                      (c) => (c.marketplace || "").toLowerCase() === "medsgo"
+                    );
+                    const watsons = product.competitors.find(
+                      (c) => (c.marketplace || "").toLowerCase() === "watsons"
+                    );
+                    // Use price per unit for fair comparison across different pack sizes
+                    const medsgoUnit =
+                      medsgo?.pricePerUnit || medsgo?.price || 0;
+                    const watsonsUnit =
+                      watsons?.pricePerUnit || watsons?.price || 0;
+                    const marketAvg =
+                      product.competitors.length > 0
+                        ? product.competitors.reduce(
+                            (acc, c) => acc + (c.pricePerUnit || c.price),
+                            0
+                          ) / product.competitors.length
+                        : 0;
+                    const diff =
+                      medsgo && watsons
+                        ? Math.round((medsgoUnit - watsonsUnit) * 100) / 100
+                        : 0;
+                    const diffPct = watsonsUnit
+                      ? Math.round((diff / watsonsUnit) * 1000) / 10
+                      : 0;
+                    const cheapest = product.competitors.reduce(
+                      (prev, cur) =>
+                        (cur.pricePerUnit || cur.price) <
+                        (prev.pricePerUnit || prev.price)
+                          ? cur
+                          : prev,
+                      product.competitors[0]
+                    );
 
-                  return (
-                    <React.Fragment key={product.id}>
-                      <tr
-                        onClick={() => {
-                          if (selectedProduct?.id === product.id) {
-                            setSelectedProduct(null);
-                          } else {
-                            setSelectedProduct(product);
-                            setExpandedView('links');
-                          }
-                        }}
-                        className={`hover:bg-blue-50/50 cursor-pointer transition-colors ${selectedProduct?.id === product.id ? 'bg-blue-50/80' : ''}`}
-                      >
-                        <td className="px-6 py-4">
-                          <div className="font-semibold text-slate-900">{product.name}</div>
-                          <div className="text-slate-500 text-xs mt-0.5">{product.sku}</div>
-                        </td>
-
-                        <td className="px-6 py-4">
-                          <div className={`flex flex-col px-3 py-2 rounded-md border ${medsgo && medsgo.price < marketAvg ? 'bg-rose-50 border-rose-100' : 'bg-slate-50 border-slate-100'}`}>
-                            <div className="text-[10px] text-slate-500 uppercase font-bold">MEDSGO</div>
-                            <div className={`font-semibold ${medsgo && medsgo.price < marketAvg ? 'text-rose-700' : 'text-emerald-600'}`}>{medsgo ? formatCurrencyPHP(medsgo.price) : '—'}</div>
-                            <div className="text-[11px] text-slate-400 mt-1">{medsgo?.brand || medsgo?.dosage || ''}</div>
-                          </div>
-                        </td>
-
-                        <td className="px-6 py-4">
-                          <div className={`flex flex-col px-3 py-2 rounded-md border ${watsons && watsons.price < marketAvg ? 'bg-rose-50 border-rose-100' : 'bg-slate-50 border-slate-100'}`}>
-                            <div className="text-[10px] text-slate-500 uppercase font-bold">WATSONS</div>
-                            <div className={`font-semibold ${watsons && watsons.price < marketAvg ? 'text-rose-700' : 'text-emerald-600'}`}>{watsons ? formatCurrencyPHP(watsons.price) : '—'}</div>
-                            <div className="text-[11px] text-slate-400 mt-1">{watsons?.brand || watsons?.dosage || ''}</div>
-                          </div>
-                        </td>
-
-                        <td className="px-6 py-4">
-                          <div className="text-right">
-                            {typeof diff === 'number' ? (
-                              <div className={`font-semibold ${diff < 0 ? 'text-emerald-500' : 'text-rose-600'}`}>{diff < 0 ? '' : '+'}{formatCurrencyPHP(Math.abs(diff))}</div>
-                            ) : '—'}
-                            <div className={`text-xs ${diffPct < 0 ? 'text-emerald-500' : 'text-rose-600'}`}>{diffPct ? `${diffPct > 0 ? '+' : ''}${diffPct.toFixed(1)}%` : ''}</div>
-                          </div>
-                        </td>
-
-                        <td className="px-6 py-4">
-                          <div className="flex justify-start">
-                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${cheapest.marketplace === 'medsgo' ? 'bg-purple-700 text-white' : 'bg-sky-700 text-white'}`}>
-                              {cheapest.marketplace?.toUpperCase()}
-                            </span>
-                          </div>
-                        </td>
-
-                        <td className="px-6 py-4 text-right text-slate-600">
-                          {formatCurrencyPHP(marketAvg)}
-                        </td>
-                      </tr>
-
-                      {selectedProduct?.id === product.id && (
-                        <tr className="bg-slate-50/50">
-                          <td colSpan={6} className="px-6 py-4 border-b border-slate-200">
-                            <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
-                              <div className="flex justify-between items-center mb-2">
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    onClick={() => setExpandedView('links')}
-                                    className={`px-3 py-1 rounded-md text-sm ${expandedView === 'links' ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-600'}`}
-                                  >
-                                    Links
-                                  </button>
-                                  <button
-                                    onClick={() => setExpandedView('history')}
-                                    className={`px-3 py-1 rounded-md text-sm ${expandedView === 'history' ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-600'}`}
-                                  >
-                                    History
-                                  </button>
-                                </div>
-                                <div>
-                                  <button className="text-blue-600 text-xs font-medium hover:underline mr-3" onClick={() => window.open(product.competitors[0]?.url || '#', '_blank')}>Open Top Result</button>
-                                  <button className="text-sm text-slate-600" onClick={() => setSelectedProduct(null)}>Close</button>
-                                </div>
-                              </div>
-
-                              {expandedView === 'links' ? (
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                  {product.competitors.map((c, i) => (
-                                    <div key={i} className="p-3 border rounded-md bg-slate-50">
-                                      <div className="flex items-center justify-between">
-                                        <div>
-                                          <div className="text-sm font-semibold text-slate-800">{(c.marketplace || c.name || '').toString().toUpperCase()}</div>
-                                          <div className="text-xs text-slate-500">{c.brand || c.dosage || ''}</div>
-                                          <div className="text-sm font-medium mt-1">{formatCurrencyPHP(c.price)}</div>
-                                        </div>
-                                        <div className="ml-4">
-                                          {c.url ? (
-                                            <a href={c.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-3 py-1 rounded bg-slate-900 text-white text-xs">Open</a>
-                                          ) : (
-                                            <span className="text-xs text-slate-400">No URL</span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <div>
-                                  <ProductChart product={product} />
-                                </div>
-                              )}
+                    return (
+                      <React.Fragment key={product.id}>
+                        <tr
+                          onClick={() => {
+                            if (selectedProduct?.id === product.id) {
+                              setSelectedProduct(null);
+                            } else {
+                              setSelectedProduct(product);
+                              setExpandedView("links");
+                            }
+                          }}
+                          className={`hover:bg-blue-50/50 cursor-pointer transition-colors ${
+                            selectedProduct?.id === product.id
+                              ? "bg-blue-50/80"
+                              : ""
+                          }`}
+                        >
+                          <td className="px-6 py-4">
+                            <div className="font-semibold text-slate-900">
+                              {product.name}
+                            </div>
+                            <div className="text-slate-500 text-xs mt-0.5">
+                              {product.sku}
                             </div>
                           </td>
+
+                          <td className="px-6 py-4">
+                            <div
+                              className={`flex flex-col px-3 py-2 rounded-md border ${
+                                medsgo && medsgoUnit < marketAvg
+                                  ? "bg-rose-50 border-rose-100"
+                                  : "bg-slate-50 border-slate-100"
+                              }`}
+                            >
+                              <div className="text-[10px] text-slate-500 uppercase font-bold">
+                                MEDSGO
+                              </div>
+                              <div
+                                className={`font-semibold ${
+                                  medsgo && medsgoUnit < marketAvg
+                                    ? "text-rose-700"
+                                    : "text-emerald-600"
+                                }`}
+                              >
+                                {medsgo ? formatCurrencyPHP(medsgoUnit) : "—"}
+                              </div>
+                              <div className="text-[10px] text-slate-400 mt-0.5">
+                                {medsgo
+                                  ? `${medsgo.quantity || 1} tab${
+                                      (medsgo.quantity || 1) > 1 ? "s" : ""
+                                    } @ ${formatCurrencyPHP(medsgo.price)}`
+                                  : ""}
+                              </div>
+                              <div className="text-[11px] text-slate-400">
+                                {medsgo?.brand || medsgo?.dosage || ""}
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="px-6 py-4">
+                            <div
+                              className={`flex flex-col px-3 py-2 rounded-md border ${
+                                watsons && watsonsUnit < marketAvg
+                                  ? "bg-rose-50 border-rose-100"
+                                  : "bg-slate-50 border-slate-100"
+                              }`}
+                            >
+                              <div className="text-[10px] text-slate-500 uppercase font-bold">
+                                WATSONS
+                              </div>
+                              <div
+                                className={`font-semibold ${
+                                  watsons && watsonsUnit < marketAvg
+                                    ? "text-rose-700"
+                                    : "text-emerald-600"
+                                }`}
+                              >
+                                {watsons ? formatCurrencyPHP(watsonsUnit) : "—"}
+                              </div>
+                              <div className="text-[10px] text-slate-400 mt-0.5">
+                                {watsons
+                                  ? `${watsons.quantity || 1} tab${
+                                      (watsons.quantity || 1) > 1 ? "s" : ""
+                                    } @ ${formatCurrencyPHP(watsons.price)}`
+                                  : ""}
+                              </div>
+                              <div className="text-[11px] text-slate-400">
+                                {watsons?.brand || watsons?.dosage || ""}
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="px-6 py-4">
+                            <div className="text-right">
+                              {typeof diff === "number" ? (
+                                <div
+                                  className={`font-semibold ${
+                                    diff < 0
+                                      ? "text-emerald-500"
+                                      : "text-rose-600"
+                                  }`}
+                                >
+                                  {diff < 0 ? "" : "+"}
+                                  {formatCurrencyPHP(Math.abs(diff))}
+                                </div>
+                              ) : (
+                                "—"
+                              )}
+                              <div
+                                className={`text-xs ${
+                                  diffPct < 0
+                                    ? "text-emerald-500"
+                                    : "text-rose-600"
+                                }`}
+                              >
+                                {diffPct
+                                  ? `${diffPct > 0 ? "+" : ""}${diffPct.toFixed(
+                                      1
+                                    )}%`
+                                  : ""}
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="px-6 py-4">
+                            <div className="flex justify-start">
+                              <span
+                                className={`px-3 py-1 rounded-full text-xs font-medium ${
+                                  cheapest.marketplace === "medsgo"
+                                    ? "bg-purple-700 text-white"
+                                    : "bg-sky-700 text-white"
+                                }`}
+                              >
+                                {cheapest.marketplace?.toUpperCase()}
+                              </span>
+                            </div>
+                          </td>
+
+                          <td className="px-6 py-4 text-right text-slate-600">
+                            {formatCurrencyPHP(marketAvg)}
+                          </td>
                         </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </>
+
+                        {selectedProduct?.id === product.id && (
+                          <tr className="bg-slate-50/50">
+                            <td
+                              colSpan={6}
+                              className="px-6 py-4 border-b border-slate-200"
+                            >
+                              <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+                                <div className="flex justify-between items-center mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      onClick={() => setExpandedView("links")}
+                                      className={`px-3 py-1 rounded-md text-sm ${
+                                        expandedView === "links"
+                                          ? "bg-slate-900 text-white"
+                                          : "bg-slate-50 text-slate-600"
+                                      }`}
+                                    >
+                                      Links
+                                    </button>
+                                    <button
+                                      onClick={() => setExpandedView("history")}
+                                      className={`px-3 py-1 rounded-md text-sm ${
+                                        expandedView === "history"
+                                          ? "bg-slate-900 text-white"
+                                          : "bg-slate-50 text-slate-600"
+                                      }`}
+                                    >
+                                      History
+                                    </button>
+                                  </div>
+                                  <div>
+                                    <button
+                                      className="text-blue-600 text-xs font-medium hover:underline mr-3"
+                                      onClick={() =>
+                                        window.open(
+                                          product.competitors[0]?.url || "#",
+                                          "_blank"
+                                        )
+                                      }
+                                    >
+                                      Open Top Result
+                                    </button>
+                                    <button
+                                      className="text-sm text-slate-600"
+                                      onClick={() => setSelectedProduct(null)}
+                                    >
+                                      Close
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {expandedView === "links" ? (
+                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    {product.competitors.map((c, i) => (
+                                      <div
+                                        key={i}
+                                        className="p-3 border rounded-md bg-slate-50"
+                                      >
+                                        <div className="flex items-center justify-between">
+                                          <div>
+                                            <div className="text-sm font-semibold text-slate-800">
+                                              {(c.marketplace || c.name || "")
+                                                .toString()
+                                                .toUpperCase()}
+                                            </div>
+                                            <div className="text-xs text-slate-500">
+                                              {c.brand || c.dosage || ""}
+                                            </div>
+                                            <div className="text-sm font-medium mt-1">
+                                              {formatCurrencyPHP(
+                                                c.pricePerUnit || c.price
+                                              )}
+                                              <span className="text-slate-400 font-normal">
+                                                /unit
+                                              </span>
+                                            </div>
+                                            <div className="text-[11px] text-slate-400">
+                                              {c.quantity || 1} tablet
+                                              {(c.quantity || 1) > 1
+                                                ? "s"
+                                                : ""}{" "}
+                                              @ {formatCurrencyPHP(c.price)}{" "}
+                                              total
+                                            </div>
+                                          </div>
+                                          <div className="ml-4">
+                                            {c.url ? (
+                                              <a
+                                                href={c.url}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="inline-flex items-center gap-2 px-3 py-1 rounded bg-slate-900 text-white text-xs"
+                                              >
+                                                Open
+                                              </a>
+                                            ) : (
+                                              <span className="text-xs text-slate-400">
+                                                No URL
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <ProductChart product={product} />
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
 
         {activeTab === "alerts" && (
