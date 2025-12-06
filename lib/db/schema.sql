@@ -37,8 +37,11 @@ CREATE TABLE IF NOT EXISTS price_history (
   discount_percent DECIMAL(5, 2),
   currency TEXT DEFAULT 'PHP',
   in_stock BOOLEAN DEFAULT true,
-  scraped_at TIMESTAMPTZ DEFAULT NOW()
+  scraped_at TIMESTAMPTZ DEFAULT NOW(),
+  scraped_date DATE -- For day-based deduplication (one entry per product per day)
 );
+-- Unique constraint for one price entry per product per day
+CREATE UNIQUE INDEX IF NOT EXISTS idx_price_history_product_date ON price_history(product_id, scraped_date);
 -- Internal products table (GoRocky's products)
 CREATE TABLE IF NOT EXISTS internal_products (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -174,3 +177,8 @@ VALUES ('Price Drop > 10%', 'price_drop', 10, true),
     true
   ),
   ('Out of Stock', 'out_of_stock', 0, true) ON CONFLICT DO NOTHING;
+-- Migration: Add scraped_date column if it doesn't exist (for existing databases)
+-- Run these commands manually in Supabase SQL Editor if upgrading:
+-- ALTER TABLE price_history ADD COLUMN IF NOT EXISTS scraped_date DATE;
+-- UPDATE price_history SET scraped_date = DATE(scraped_at) WHERE scraped_date IS NULL;
+-- CREATE UNIQUE INDEX IF NOT EXISTS idx_price_history_product_date ON price_history(product_id, scraped_date);

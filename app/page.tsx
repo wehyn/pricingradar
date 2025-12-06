@@ -556,7 +556,7 @@ export default function Dashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           marketplace: "all",
-          saveToDb: false,
+          saveToDb: true,
           includeProducts: true,
         }),
       });

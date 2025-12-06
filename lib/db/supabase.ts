@@ -35,6 +35,7 @@ export interface DbPriceHistory {
   currency: string;
   in_stock: boolean;
   scraped_at: string;
+  scraped_date?: string; // YYYY-MM-DD format for day-based deduplication
 }
 
 // Initialize Supabase client
@@ -66,6 +67,12 @@ export function getSupabase(): SupabaseClient {
     supabaseInstance = getSupabaseClient();
   }
   return supabaseInstance;
+}
+
+// Get a fresh Supabase client (useful when schema cache is stale)
+export function getFreshSupabase(): SupabaseClient {
+  supabaseInstance = null;
+  return getSupabaseClient();
 }
 
 // Competitor operations
@@ -170,14 +177,49 @@ export async function addPriceHistory(
   entry: Omit<DbPriceHistory, "id">
 ): Promise<DbPriceHistory> {
   const supabase = getSupabase();
-  const { data, error } = await supabase
+
+  // Extract date from scraped_at for day-based deduplication
+  const scrapedDate = new Date(entry.scraped_at).toISOString().split("T")[0];
+
+  // First, try to check if there's already an entry for today
+  const { data: existing } = await supabase
     .from("price_history")
-    .insert(entry)
-    .select()
+    .select("id")
+    .eq("product_id", entry.product_id)
+    .gte("scraped_at", `${scrapedDate}T00:00:00.000Z`)
+    .lt("scraped_at", `${scrapedDate}T23:59:59.999Z`)
+    .limit(1)
     .single();
 
-  if (error) throw error;
-  return data;
+  if (existing) {
+    // Update existing entry for today
+    const { data, error } = await supabase
+      .from("price_history")
+      .update({
+        price: entry.price,
+        original_price: entry.original_price,
+        discount_percent: entry.discount_percent,
+        currency: entry.currency,
+        in_stock: entry.in_stock,
+        scraped_at: entry.scraped_at,
+      })
+      .eq("id", existing.id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } else {
+    // Insert new entry
+    const { data, error } = await supabase
+      .from("price_history")
+      .insert(entry)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  }
 }
 
 export async function getPriceHistory(
@@ -362,4 +404,128 @@ export async function getAllProductsWithPrices(): Promise<
       };
     }
   );
+}
+
+// Get all products
+export async function getAllProducts(): Promise<DbProduct[]> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from("products")
+    .select("*")
+    .order("name");
+
+  if (error) throw error;
+  return data || [];
+}
+
+// Get latest price for a product
+export async function getLatestPriceForProduct(
+  productId: string
+): Promise<DbPriceHistory | null> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from("price_history")
+    .select("*")
+    .eq("product_id", productId)
+    .order("scraped_at", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error && error.code !== "PGRST116") throw error;
+  return data;
+}
+
+// Backfill price history with random variations for demo/historical data
+export async function backfillPriceHistory(
+  productId: string,
+  currentPrice: number,
+  days: number = 7
+): Promise<{ created: number; errors: string[] }> {
+  const supabase = getSupabase();
+  const today = new Date();
+  let created = 0;
+  const errors: string[] = [];
+
+  // First, check if there's already history for this product to avoid duplicates
+  const { data: existingHistory } = await supabase
+    .from("price_history")
+    .select("scraped_at")
+    .eq("product_id", productId)
+    .order("scraped_at", { ascending: false });
+
+  // Get dates that already have data
+  const existingDates = new Set(
+    (existingHistory || []).map(
+      (h) => new Date(h.scraped_at).toISOString().split("T")[0]
+    )
+  );
+
+  for (let i = days; i >= 1; i--) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - i);
+    const dateStr = date.toISOString().split("T")[0];
+
+    // Skip if we already have data for this date
+    if (existingDates.has(dateStr)) {
+      continue;
+    }
+
+    // Add random variation of +/- 5-10%
+    const variation = Math.random() * 0.1 - 0.05; // -5% to +5%
+    const historicalPrice =
+      Math.round(currentPrice * (1 + variation) * 100) / 100;
+
+    try {
+      // Use simple insert instead of upsert (no scraped_date column needed)
+      const { error } = await supabase.from("price_history").insert({
+        product_id: productId,
+        price: historicalPrice,
+        currency: "PHP",
+        in_stock: true,
+        scraped_at: date.toISOString(),
+      });
+
+      if (error) {
+        errors.push(`Day ${i}: ${error.message}`);
+      } else {
+        created++;
+      }
+    } catch (err) {
+      errors.push(`Day ${i}: ${(err as Error).message}`);
+    }
+  }
+
+  return { created, errors };
+}
+
+// Backfill all products with historical data
+export async function backfillAllProductsHistory(days: number = 7): Promise<{
+  productsProcessed: number;
+  totalCreated: number;
+  errors: string[];
+}> {
+  const products = await getAllProducts();
+  let totalCreated = 0;
+  const allErrors: string[] = [];
+
+  for (const product of products) {
+    const latestPrice = await getLatestPriceForProduct(product.id);
+    if (latestPrice) {
+      const result = await backfillPriceHistory(
+        product.id,
+        latestPrice.price,
+        days
+      );
+      totalCreated += result.created;
+      if (result.errors.length > 0) {
+        allErrors.push(`Product ${product.name}: ${result.errors.join(", ")}`);
+      }
+    }
+  }
+
+  return {
+    productsProcessed: products.length,
+    totalCreated,
+    errors: allErrors,
+  };
 }
